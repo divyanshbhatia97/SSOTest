@@ -157,7 +157,6 @@ namespace SingleSignOn.Helpers
         }
         private static void EncryptElement(XmlDocument Doc, string ElementName, SymmetricAlgorithm Key)
         {
-
             XmlElement elementToEncrypt = Doc.GetElementsByTagName(ElementName)[0] as XmlElement;
             EncryptedXml eXml = new EncryptedXml();
             byte[] encryptedElement = eXml.EncryptData(elementToEncrypt, Key, false);

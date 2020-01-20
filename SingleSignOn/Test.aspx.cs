@@ -23,11 +23,11 @@ namespace SingleSignOn
                 FirstName = "John",
                 LastName = "Smith",
                 PhoneNumber = "001354534643",
-                GroupMembership = new List<string>()
+                GroupMembership = ""
             };
             var samlRequestData = SAML2Helper.GetSamlBase64StringToGetToken(ssoLoginData);
             Response.Clear();
-            string postbackUrl = "https://localhost:44331/api/test";
+            string postbackUrl = "https://localhost:44391/api/values";
             var RelayState = "example.org";
             var id = Guid.NewGuid().ToString();
             StringBuilder sb = new StringBuilder();
