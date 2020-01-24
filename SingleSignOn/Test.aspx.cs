@@ -27,8 +27,8 @@ namespace SingleSignOn
             };
             var samlRequestData = SAML2Helper.GetSamlBase64StringToGetToken(ssoLoginData);
             Response.Clear();
-            string postbackUrl = "https://localhost:44391/api/values";
-            var RelayState = "example.org";
+            string postbackUrl = "https://dev.axco.co.uk/Axco.sso/saml2/v1/signin/community";
+            var RelayState = "https://dev.axco.co.uk/Axco.sso/saml2/v1/signin/community";
             var id = Guid.NewGuid().ToString();
             StringBuilder sb = new StringBuilder();
 
