@@ -28,7 +28,7 @@ namespace SingleSignOn.Helpers
         public static string GetSamlBase64StringToGetToken(SSOLoginData ssoLoginData)
         {
             var xmlDoc = GetSamlXmlDocToGetToken(ssoLoginData);
-          //  EncryptAssertionInDoc(xmlDoc);
+           // EncryptAssertionInDoc(xmlDoc);
             return GetBase64String(xmlDoc);
         }
 
@@ -48,50 +48,58 @@ namespace SingleSignOn.Helpers
         }
 
         private static Saml2Assertion CreateSamlAssertionsForTokenRequest(string requestId, SSOLoginData ssoLoginData)
-        {
-            if (!File.Exists(certPath))
-            {
-                throw new Exception($"Unable to find Certificate.  Path: {certPath}");
-            }
+		{
+			if (File.Exists(certPath))
+			{
+				var assertion = new Saml2Assertion(new Saml2NameIdentifier("SSO"));
 
-            var assertion = new Saml2Assertion(new Saml2NameIdentifier("SSO"));
-            assertion.Subject = new Saml2Subject(new Saml2NameIdentifier($"AxcoRequest : {requestId}"));
+				assertion.Subject = new Saml2Subject(new Saml2NameIdentifier($"AxcoRequest : {requestId}"));
 
-            assertion.Conditions = new Saml2Conditions()
-            {
-                NotBefore = DateTime.Now.AddSeconds(-30),
-                NotOnOrAfter = DateTime.Now.AddSeconds(30),
-            };
+				assertion.Conditions = new Saml2Conditions()
+				{
+					NotBefore = DateTime.Now.AddSeconds(-30),
+					NotOnOrAfter = DateTime.Now.AddSeconds(30),
+				};
 
-            var statement = new Saml2AttributeStatement();
-            AddAttributeToStatement("UserName", ssoLoginData.Email, statement);
-            AddAttributeToStatement("FirstName", ssoLoginData.FirstName, statement);
-            AddAttributeToStatement("LastName", ssoLoginData.LastName, statement);
-            AddAttributeToStatement("Country", ssoLoginData.Country, statement);
-            AddAttributeToStatement("City", ssoLoginData.City, statement);
-            AddAttributeToStatement("Department", ssoLoginData.Department, statement);
-            AddAttributeToStatement("PhoneNumber", ssoLoginData.PhoneNumber, statement);
-            AddAttributeToStatement("GroupMembership", ssoLoginData.GroupMembership, statement);
-            AddAttributeToStatement("ErrorUrl", ssoLoginData.ErrorUrl, statement);
+				assertion.Statements.Add(GetAttributeStatement(ssoLoginData));
 
-            assertion.Statements.Add(statement);
+				var x509 = new X509Certificate2();
+				x509.Import(certPath, certPwd, X509KeyStorageFlags.MachineKeySet);
 
-            var x509 = new X509Certificate2();
-            x509.Import(certPath, certPwd, X509KeyStorageFlags.MachineKeySet);
+				var clientSigningCreds = new System.IdentityModel.Tokens.X509SigningCredentials(x509);
+				assertion.SigningCredentials = clientSigningCreds;
 
-            var clientSigningCreds = new System.IdentityModel.Tokens.X509SigningCredentials(x509);        
-            assertion.SigningCredentials = clientSigningCreds;
+				return assertion;
+			}
+			else
+			{
+				throw new Exception($"Unable to find Certificate.  Path: {certPath}");
+			}
+		}
 
-            return assertion;
-        }
-        #endregion
+		private static Saml2AttributeStatement GetAttributeStatement(SSOLoginData ssoLoginData)
+		{
+			var statement = new Saml2AttributeStatement();
+			statement.Attributes.Add(GetAttribute("UserName", ssoLoginData.Email));
+			statement.Attributes.Add(GetAttribute("UserName", ssoLoginData.Email));
+			statement.Attributes.Add(GetAttribute("FirstName", ssoLoginData.FirstName));
+			statement.Attributes.Add(GetAttribute("LastName", ssoLoginData.LastName));
+			statement.Attributes.Add(GetAttribute("Country", ssoLoginData.Country));
+			statement.Attributes.Add(GetAttribute("City", ssoLoginData.City));
+			statement.Attributes.Add(GetAttribute("Department", ssoLoginData.Department));
+			statement.Attributes.Add(GetAttribute("PhoneNumber", ssoLoginData.PhoneNumber));
+			statement.Attributes.Add(GetAttribute("GroupMembership", ssoLoginData.GroupMembership));
+			statement.Attributes.Add(GetAttribute("ErrorUrl", ssoLoginData.ErrorUrl));
+			return statement;
+		}
+		#endregion
 
-        #region Genrate SAML to Send to Portal UI
-      
-        #endregion
+		#region Genrate SAML to Send to Portal UI
 
-        #region
-        private static XmlElement CreateRequestNode(XmlDocument doc, string requestId)
+		#endregion
+
+		#region
+		private static XmlElement CreateRequestNode(XmlDocument doc, string requestId)
         {
             var elem = doc.CreateElement("Request", SAML2_Protocol);
             elem.SetAttribute("id", requestId);
@@ -117,11 +125,12 @@ namespace SingleSignOn.Helpers
             var xmlStr = sb.ToString();
             return xmlStr;
         }
-        private static void AddAttributeToStatement(string attrName,string attrValue, Saml2AttributeStatement statement)
+        private static Saml2Attribute GetAttribute(string attrName,string attrValue)
         {
             var attribute = new Saml2Attribute(attrName);
             attribute.Values.Add(attrValue);
-            statement.Attributes.Add(attribute);
+			return attribute;
+            //statement.Attributes.Add(attribute);
         }
         private static void AppendSamlAssertion(XmlDocument xmlDocument, XmlElement xmlElementToAppendTo, Saml2Assertion samlAssertion)
         {
