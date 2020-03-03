@@ -1,10 +1,9 @@
-﻿using Microsoft.IdentityModel.SecurityTokenService;
-using Microsoft.IdentityModel.Tokens;
+﻿using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Tokens.Saml2;
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography.Xml;
 using System.Text;
@@ -13,63 +12,133 @@ using System.Xml;
 namespace SingleSignOn.Helpers
 {
 
-    public class SAML2Helper
-    {
-        const string SAML2_Protocol = "urn:oasis:names:tc:SAML:2.0:protocol";
-        const string SAML2_Assertion = "urn:oasis:names:tc:SAML:2.0:assertion";
-        const string DateTimeFormat = "yyyy-MM-ddThh:mm:ss.fffZ";
+	public class SAML2Helper
+	{
+		const string SAML2_Protocol = "urn:oasis:names:tc:SAML:2.0:protocol";
+		const string SAML2_Basic = "urn:oasis:names:tc:SAML:2.0:attrname-format:basic";
+		const string SAML2_Assertion = "urn:oasis:names:tc:SAML:2.0:assertion";
+		const string SAML2_Bearer = "urn:oasis:names:tc:SAML:2.0:cm:bearer";
+		const string SAML2_Password = "urn:oasis:names:tc:SAML:2.0:ac:classes:Password";
+		const string DateTimeFormat = "yyyy-MM-ddThh:mm:ss.fffZ";
+		const string SAML2_Success = "urn:oasis:names:tc:SAML:2.0:status:Success";
 
-        static string certPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigurationManager.AppSettings["SSOCertificatePath"]);
-        static string certPwd = ConfigurationManager.AppSettings["SSOCertificatePassword"];
-        static string SSOEncryptionKey = ConfigurationManager.AppSettings["SSOEncryptionKey"];
+		static readonly string certPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigurationManager.AppSettings["SSOCertificatePath"]);
+		static readonly string certPwd = ConfigurationManager.AppSettings["SSOCertificatePassword"];
+		static readonly string recepient = "https://dev.axco.co.uk/Axco.sso/saml2/v1/signin/AssurexGlobal";
 
+		public static string GetSamlBase64StringToGetToken(SSOLoginData ssoLoginData)
+		{
+			var xmlDoc = GetDoc(ssoLoginData);
+			return GetBase64String(xmlDoc);
+		}
 
-        #region To Genrate SAML for Token Request
-        public static string GetSamlBase64StringToGetToken(SSOLoginData ssoLoginData)
-        {
-            var xmlDoc = GetSamlXmlDocToGetToken(ssoLoginData);
-           // EncryptAssertionInDoc(xmlDoc);
-            return GetBase64String(xmlDoc);
-        }
+		private static XmlDocument GetDoc(SSOLoginData ssoLoginData)
+		{
+			var id = "_" + Guid.NewGuid().ToString().Replace("-", "");
 
-        private static XmlDocument GetSamlXmlDocToGetToken(SSOLoginData ssoLoginData)
-        {         
-            var xmlDoc = new XmlDocument();
+			var xmlDoc = new XmlDocument();
 
-            var requestId = Guid.NewGuid().ToString();
-            var elemReq = CreateRequestNode(xmlDoc, requestId);
-            xmlDoc.AppendChild(elemReq);
+			var response = xmlDoc.CreateElement("samlp", "Response", SAML2_Protocol);
+			response.SetAttribute("ID", id);
+			response.SetAttribute("Version", "2.0");
+			response.SetAttribute("IssueInstant", DateTime.UtcNow.ToString(DateTimeFormat));
+			response.SetAttribute("Destination", "https://dev.axco.co.uk/Axco.sso/saml2/v1/signin/AssurexGlobal");
 
-            var samlAssertion = CreateSamlAssertionsForTokenRequest(requestId, ssoLoginData);
+			var docIssuer = xmlDoc.CreateElement("saml", "Issuer", SAML2_Assertion);
+			docIssuer.InnerText = "Assurex Global Test System";
+			response.AppendChild(docIssuer);
 
-            AppendSamlAssertion(xmlDoc, elemReq, samlAssertion);
+			var status = xmlDoc.CreateElement("samlp", "Status");
+			var statuscode = xmlDoc.CreateElement("samlp", "StatusCode");
+			statuscode.SetAttribute("Value", SAML2_Success);
+			status.AppendChild(statuscode);
+			response.AppendChild(status);
 
-            return xmlDoc;
-        }
+			var xmlAssertion = GetAssertion(xmlDoc, ssoLoginData);
+			response.AppendChild(xmlAssertion);
 
-        private static Saml2Assertion CreateSamlAssertionsForTokenRequest(string requestId, SSOLoginData ssoLoginData)
+			xmlDoc.AppendChild(response);
+
+			xmlDoc.DocumentElement.AppendChild(GetSignature(xmlDoc, id));
+
+			return xmlDoc;
+		}
+
+		private static XmlElement GetSignature(XmlDocument xmlDocument, string id)
+		{
+			var x509 = new X509Certificate2();
+			x509.Import(certPath, certPwd, X509KeyStorageFlags.MachineKeySet);
+
+			SignedXml signedXml = new SignedXml(xmlDocument)
+			{
+				SigningKey = x509.PrivateKey
+			};
+			//signedXml.SignedInfo.CanonicalizationMethod = "http://www.w3.org/2001/10/xml-exc-c14n#";
+			signedXml.SignedInfo.SignatureMethod = "http://www.w3.org/2000/09/xmldsig#rsa-sha1";
+
+			Reference reference = new Reference("#" + id);
+
+			reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
+
+			reference.AddTransform(new XmlDsigExcC14NTransform("#default samlp saml ds xs xsi"));
+
+			signedXml.AddReference(reference);
+
+			KeyInfo keyInfo = new KeyInfo();
+
+			keyInfo.AddClause(new KeyInfoX509Data(x509));
+
+			signedXml.KeyInfo = keyInfo;
+
+			signedXml.ComputeSignature();
+
+			return signedXml.GetXml();
+		}
+
+		private static XmlNode GetAssertion(XmlDocument xmlDoc, SSOLoginData ssoLoginData)
 		{
 			if (File.Exists(certPath))
 			{
-				var assertion = new Saml2Assertion(new Saml2NameIdentifier("SSO"));
+				var assertion = new Saml2Assertion(new Saml2NameIdentifier("Assurex Global Test System"));
 
-				assertion.Subject = new Saml2Subject(new Saml2NameIdentifier($"AxcoRequest : {requestId}"));
+				assertion.Subject = new Saml2Subject(new Saml2NameIdentifier("ckillilea@assurexglobal.com"));
 
-				assertion.Conditions = new Saml2Conditions()
+				assertion.Subject.SubjectConfirmations.Add(new Saml2SubjectConfirmation(new Uri(SAML2_Bearer))
+				{ SubjectConfirmationData = new Saml2SubjectConfirmationData() { Recipient = new Uri(recepient) } });
+
+				assertion.Statements.Add(new Saml2AuthenticationStatement(new Saml2AuthenticationContext(new Uri(SAML2_Password))));
+
+				List<Saml2Attribute> attributes = new List<Saml2Attribute>()
 				{
-					NotBefore = DateTime.Now.AddSeconds(-30),
-					NotOnOrAfter = DateTime.Now.AddSeconds(30),
+					GetAttribute("UserName", ssoLoginData.Email),
+					GetAttribute("FirstName", ssoLoginData.FirstName),
+					GetAttribute("LastName", ssoLoginData.LastName),
+					GetAttribute("Country", ssoLoginData.Country),
+					GetAttribute("City", ssoLoginData.City),
+					GetAttribute("Department", ssoLoginData.Department),
+					GetAttribute("PhoneNumber", ssoLoginData.PhoneNumber),
+					GetAttribute("GroupMembership", ssoLoginData.GroupMembership),
+					GetAttribute("ErrorUrl", ssoLoginData.ErrorUrl),
 				};
 
-				assertion.Statements.Add(GetAttributeStatement(ssoLoginData));
+				assertion.Statements.Add(new Saml2AttributeStatement(attributes));
 
-				var x509 = new X509Certificate2();
-				x509.Import(certPath, certPwd, X509KeyStorageFlags.MachineKeySet);
+				var samlAssertion = assertion;
 
-				var clientSigningCreds = new System.IdentityModel.Tokens.X509SigningCredentials(x509);
-				assertion.SigningCredentials = clientSigningCreds;
+				var serializer = new Saml2Serializer();
+				var sb = new StringBuilder();
+				var settings = new XmlWriterSettings();
+				using (var writer = XmlWriter.Create(sb, settings))
+				{
+					serializer.WriteSaml2Assertion(writer, samlAssertion);
+				}
 
-				return assertion;
+				var samlXmlDoc = new XmlDocument();
+				samlXmlDoc.LoadXml(sb.ToString());
+
+				var xmlAssertion = xmlDoc.ImportNode(samlXmlDoc.DocumentElement, true);
+
+				return xmlAssertion;
 			}
 			else
 			{
@@ -77,144 +146,45 @@ namespace SingleSignOn.Helpers
 			}
 		}
 
-		private static Saml2AttributeStatement GetAttributeStatement(SSOLoginData ssoLoginData)
+		private static string GetBase64String(XmlDocument xmlDocument)
 		{
-			var statement = new Saml2AttributeStatement();
-			statement.Attributes.Add(GetAttribute("UserName", ssoLoginData.Email));
-			statement.Attributes.Add(GetAttribute("UserName", ssoLoginData.Email));
-			statement.Attributes.Add(GetAttribute("FirstName", ssoLoginData.FirstName));
-			statement.Attributes.Add(GetAttribute("LastName", ssoLoginData.LastName));
-			statement.Attributes.Add(GetAttribute("Country", ssoLoginData.Country));
-			statement.Attributes.Add(GetAttribute("City", ssoLoginData.City));
-			statement.Attributes.Add(GetAttribute("Department", ssoLoginData.Department));
-			statement.Attributes.Add(GetAttribute("PhoneNumber", ssoLoginData.PhoneNumber));
-			statement.Attributes.Add(GetAttribute("GroupMembership", ssoLoginData.GroupMembership));
-			statement.Attributes.Add(GetAttribute("ErrorUrl", ssoLoginData.ErrorUrl));
-			return statement;
+			var sb = new StringBuilder();
+			var settings = new XmlWriterSettings();
+			using (var writer = XmlWriter.Create(sb, settings))
+			{
+				xmlDocument.WriteTo(writer);
+			}
+			var xmlStr = sb.ToString();
+			//return xmlStr;
+			var encoding = new UnicodeEncoding();
+			var bytes = encoding.GetBytes(xmlStr);
+			return Convert.ToBase64String(bytes);
 		}
-		#endregion
 
-		#region Genrate SAML to Send to Portal UI
-
-		#endregion
-
-		#region
-		private static XmlElement CreateRequestNode(XmlDocument doc, string requestId)
-        {
-            var elem = doc.CreateElement("Request", SAML2_Protocol);
-            elem.SetAttribute("id", requestId);
-            elem.SetAttribute("IssueInstant", DateTime.UtcNow.ToString(DateTimeFormat));
-            elem.SetAttribute("Version", "2.0");
-            return elem;
-        }
-        private static string GetBase64String(XmlDocument xmlDocument)
-        {
-            var xmlStr = ConvertXmlDocToString(xmlDocument);
-            var encoding = new UnicodeEncoding();
-            var bytes = encoding.GetBytes(xmlStr);
-            return Convert.ToBase64String(bytes);
-        }
-        private static string ConvertXmlDocToString(XmlDocument xmlDocument)
-        {
-            var sb = new StringBuilder();
-            var settings = new XmlWriterSettings();
-            using (var writer = XmlWriter.Create(sb, settings))
-            {
-                xmlDocument.WriteTo(writer);
-            }
-            var xmlStr = sb.ToString();
-            return xmlStr;
-        }
-        private static Saml2Attribute GetAttribute(string attrName,string attrValue)
-        {
-            var attribute = new Saml2Attribute(attrName);
-            attribute.Values.Add(attrValue);
+		private static Saml2Attribute GetAttribute(string attrName, string attrValue)
+		{
+			var attribute = new Saml2Attribute(attrName, attrValue)
+			{
+				NameFormat = new Uri(SAML2_Basic)
+			};
 			return attribute;
-            //statement.Attributes.Add(attribute);
-        }
-        private static void AppendSamlAssertion(XmlDocument xmlDocument, XmlElement xmlElementToAppendTo, Saml2Assertion samlAssertion)
-        {
-            var samlXmlDoc = CreateXmlDocFromSamlAssertion(samlAssertion);
-            var deep = true;
-            var xmlAssertion = (XmlElement)xmlDocument.ImportNode(samlXmlDoc.DocumentElement, deep);          
-            xmlElementToAppendTo.AppendChild(xmlAssertion);
-        }
-        private static XmlDocument CreateXmlDocFromSamlAssertion(Saml2Assertion assertion)
-        {
-            var serializer = new Saml2Serializer();
-            var sb = new StringBuilder();
-            var settings = new XmlWriterSettings();
-            using (var writer = XmlWriter.Create(sb, settings))
-            {
-                serializer.WriteSaml2Assertion(writer, assertion);
-            }
+		}
 
-            var doc = new XmlDocument();
-            doc.LoadXml(sb.ToString());
-            return doc;
-        }
+	}
 
-        #endregion
+	public class Saml2Serializer : Saml2SecurityTokenHandler
+	{
+		public Saml2Serializer()
+		{
+			Configuration = new SecurityTokenHandlerConfiguration()
+			{
 
-        #region Encryption Related Methods
-        private static void EncryptAssertionInDoc(XmlDocument xmlDoc)
-        {
-            var rijndaelManagedAlgo = new RijndaelManaged();
-            rijndaelManagedAlgo.Key = Encoding.ASCII.GetBytes(SSOEncryptionKey);
-            rijndaelManagedAlgo.Padding = PaddingMode.None;
-            EncryptElement(xmlDoc, "Assertion", rijndaelManagedAlgo);
-        }
-        private static void EncryptElement(XmlDocument Doc, string ElementName, SymmetricAlgorithm Key)
-        {
-            XmlElement elementToEncrypt = Doc.GetElementsByTagName(ElementName)[0] as XmlElement;
-            EncryptedXml eXml = new EncryptedXml();
-            byte[] encryptedElement = eXml.EncryptData(elementToEncrypt, Key, false);
-            EncryptedData edElement = new EncryptedData();
-            edElement.Type = EncryptedXml.XmlEncElementUrl;
-            string encryptionMethod = null;
+			};
+		}
 
-            if (Key is Rijndael)
-            {
-                switch (Key.KeySize)
-                {
-                    case 128:
-                        encryptionMethod = EncryptedXml.XmlEncAES128Url;
-
-                        break;
-                    case 192:
-                        encryptionMethod = EncryptedXml.XmlEncAES192Url;
-                        break;
-                    case 256:
-                        encryptionMethod = EncryptedXml.XmlEncAES256Url;
-                        break;
-                }
-            }
-            else
-            {
-                throw new CryptographicException("The specified algorithm is not supported for XML Encryption.");
-            }
-
-            edElement.EncryptionMethod = new EncryptionMethod(encryptionMethod);
-            edElement.CipherData.CipherValue = encryptedElement;
-            EncryptedXml.ReplaceElement(elementToEncrypt, edElement, false);
-        }
-        #endregion
-
-    }
-
-    public class Saml2Serializer : Saml2SecurityTokenHandler
-    {
-        public Saml2Serializer()
-        {
-            Configuration = new SecurityTokenHandlerConfiguration()
-            {
-
-            };
-        }
-
-        public void WriteSaml2Assertion(XmlWriter writer, Saml2Assertion data)
-        {
-            base.WriteAssertion(writer, data);
-        }
-    }  
+		public void WriteSaml2Assertion(XmlWriter writer, Saml2Assertion data)
+		{
+			base.WriteAssertion(writer, data);
+		}
+	}
 }

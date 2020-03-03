@@ -1,11 +1,8 @@
-﻿using SingleSignOn.Helpers;
+﻿using ComponentSpace.Saml2;
+using SingleSignOn.Helpers;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Web;
 using System.Web.UI;
-using System.Web.UI.WebControls;
 
 namespace SingleSignOn
 {
@@ -15,7 +12,8 @@ namespace SingleSignOn
 		{
 			SSOLoginData ssoLoginData = new SSOLoginData()
 			{
-				Email = "mytestemail@gmail.com",
+				Email = "ckillilea@assurexglobal.com",
+				UserName= "ckillilea@assurexglobal.com",
 				City = "New York",
 				Country = "US",
 				Department = "IT",
@@ -23,23 +21,21 @@ namespace SingleSignOn
 				FirstName = "John",
 				LastName = "Smith",
 				PhoneNumber = "001354534643",
-				GroupMembership = ""
+				GroupMembership = "InsightCompliance"
 			};
-			var samlRequestData = SAML2Helper.GetSamlBase64StringToGetToken(ssoLoginData);
+			var SAMLResponse = SAML2Helper.GetSamlBase64StringToGetToken(ssoLoginData);
+
 			Response.Clear();
-			//string postbackUrl = "https://dev.axco.co.uk/Axco.sso/saml2/v1/signin/community";
-			//var RelayState = "https://dev.axco.co.uk/Axco.sso/saml2/v1/signin/community";
-			string postbackUrl = "";
+			string postbackUrl = "https://dev.axco.co.uk/Axco.sso/saml2/v1/signin/AssurexGlobal";
+
 			var RelayState = "";
-			var id = Guid.NewGuid().ToString();
 			StringBuilder sb = new StringBuilder();
 
 			sb.Append("<html>");
 			sb.AppendFormat(@"<body onload='document.forms[""form""].submit()'>");
 			sb.AppendFormat("<form name='form' action='{0}' method='POST'>", postbackUrl);
-			sb.AppendFormat("<input type='hidden' id='SAMLRequest' name='SAMLRequest' value='{0}'>", samlRequestData);
+			sb.AppendFormat("<input type='hidden' id='SAMLResponse' name='SAMLResponse' value='{0}'>", SAMLResponse);
 			sb.AppendFormat("<input type='hidden' id='RelayState' name='RelayState' value='{0}'>", RelayState);
-			sb.AppendFormat("<input type='hidden' id='id' name='id' value='{0}'>", id);
 			sb.Append("</form>");
 			sb.Append("</body>");
 			sb.Append("</html>");

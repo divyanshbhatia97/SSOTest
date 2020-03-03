@@ -6,7 +6,6 @@
         <h1>Single-Sign On</h1>
         <p class="lead">Single sign-on (SSO) is a property of access control of multiple related, yet independent, software systems.</p>
         <asp:Button runat="server" ID="btnTestSSO" Text="Test SSO &raquo;" CssClass="btn btn-primary btn-lg" OnClick="btnTestSSO_Click" />  
-      <%--<p><a href="test.aspx" class="btn btn-primary btn-lg">Test SSO &raquo;</a></p>--%>
     </div>
 
     <div class="row">
